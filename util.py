@@ -119,7 +119,10 @@ def get_record(page_name, page_results, timestamp, loop):
     else:
         page_result = {"time_to_interactive": 0}
         for metric in list(page_results.keys()):
-            page_result[metric] = page_results[metric][loop]
+            if page_results[metric] != [] and loop < len(page_results[metric]):
+                page_result[metric] = page_results[metric][loop]
+            else:
+                page_result[metric] = 0
     data = {
         "name": page_name,
         "type": "page",
@@ -184,34 +187,37 @@ def upload_file(file_name, file_path, galloper_url, project_id, token, bucket="r
 
 def upload_page_results_data(path, page_name, timestamp, galloper_url, project_id, token, loops):
     for i in range(1, loops + 1):
-        filmstrip_files = os.listdir(f"{path}data/filmstrip/{i}/")
-        for each in filmstrip_files:
-            os.rename(f"{path}data/filmstrip/{i}/{each}", f"{path}data/filmstrip/{i}/{page_name}_{timestamp}_{each}")
-            upload_file(f"{page_name}_{timestamp}_{each}", f"{path}data/filmstrip/{i}/", galloper_url, project_id,
-                        token)
-        screenshot_files = os.listdir(f"{path}data/screenshots/{i}/")
-        for each in screenshot_files:
-            os.rename(f"{path}data/screenshots/{i}/{each}",
-                      f"{path}data/screenshots/{i}/{page_name}_{timestamp}_{each}")
-            upload_file(f"{page_name}_{timestamp}_{each}", f"{path}data/screenshots/{i}/", galloper_url, project_id,
-                        token)
-
-        os.rename(f"{path}data/video/{i}.mp4", f"{path}data/video/{page_name}_{timestamp}_{i}.mp4")
-        upload_file(f"{page_name}_{timestamp}_{i}.mp4", f"{path}data/video/", galloper_url, project_id, token)
+        if os.path.isdir(f"{path}data/filmstrip/{i}/"):
+            filmstrip_files = os.listdir(f"{path}data/filmstrip/{i}/")
+            for each in filmstrip_files:
+                os.rename(f"{path}data/filmstrip/{i}/{each}", f"{path}data/filmstrip/{i}/{page_name}_{timestamp}_{each}")
+                upload_file(f"{page_name}_{timestamp}_{each}", f"{path}data/filmstrip/{i}/", galloper_url, project_id,
+                            token)
+        if os.path.isdir(f"{path}data/screenshots/{i}/"):
+            screenshot_files = os.listdir(f"{path}data/screenshots/{i}/")
+            for each in screenshot_files:
+                os.rename(f"{path}data/screenshots/{i}/{each}",
+                        f"{path}data/screenshots/{i}/{page_name}_{timestamp}_{each}")
+                upload_file(f"{page_name}_{timestamp}_{each}", f"{path}data/screenshots/{i}/", galloper_url, project_id,
+                            token)
+        if os.path.exists(f"{path}data/video/{i}.mp4"):
+            os.rename(f"{path}data/video/{i}.mp4", f"{path}data/video/{page_name}_{timestamp}_{i}.mp4")
+            upload_file(f"{page_name}_{timestamp}_{i}.mp4", f"{path}data/video/", galloper_url, project_id, token)
 
 
 def upload_static_files(path, galloper_url, project_id, token):
     static_bucket = "sitespeedstatic"
-    for each in ["css", "img", "img/ico", "js", "font"]:
+    for each in ["css", "img", "img/ico", "js"]:
         files = [f for f in os.listdir(f"{path}{each}/") if os.path.isfile(f"{path}{each}/{f}")]
         for file in files:
             upload_file(file, f"{path}{each}/", galloper_url, project_id, token, bucket=static_bucket)
 
 
+
 def upload_distributed_report_files(path, timestamp, galloper_url, project_id, token, loops):
     query_params = '?' + urllib.parse.urlencode(s3_config) if s3_config else ''
-    report_bucket = f"{galloper_url}/api/v1/artifacts/artifact/{project_id}/reports{query_params}"
-    static_bucket = f"{galloper_url}/api/v1/artifacts/artifact/{project_id}/sitespeedstatic{query_params}"
+    report_bucket = f"{galloper_url}/api/v1/artifacts/artifact/{project_id}/reports"
+    static_bucket = f"{galloper_url}/api/v1/artifacts/artifact/{project_id}/sitespeedstatic"
     for each in ["index.html", "detailed.html", "pages.html", "domains.html", "toplist.html", "assets.html",
                  "settings.html", "help.html"]:
         with open(f"{path}{each}", "r", encoding='utf-8') as f:
@@ -227,6 +233,8 @@ def aggregate_results(page_result):
     for metric in list(page_result.keys()):
         if metric == "timestamps":
             aggregated_result[metric] = "0"
+        elif not page_result[metric]:
+            aggregated_result[metric] = 0
         else:
             aggregated_result[metric] = get_aggregated_value(sys.argv[4], page_result[metric])
     return aggregated_result
@@ -235,10 +243,11 @@ def aggregate_results(page_result):
 def update_page_results_html(html, report_bucket, static_bucket, page_name, timestamp, loops, prefix):
     html = html.replace(f'<li><a href="{prefix}assets.html">Assets</a></li>',
                         f'<li><a href="{report_bucket}/{timestamp}_assets.html?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}">Assets</a></li> <li><a href="{timestamp}_distributed_report.zip?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}">Report</a></li>')
-    html = html.replace(f'href="{prefix}css/index.min.css"', f'href="{static_bucket}/index.min.css?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
+    html = html.replace(f'href="{prefix}css/index-light.min.css"', f'href="{static_bucket}/index-light.min.css?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
     html = html.replace(f'href="{prefix}img/ico/sitespeed.io-144.png"', f'href="{static_bucket}/sitespeed.io-144.png?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
     html = html.replace(f'href="{prefix}img/ico/sitespeed.io-114.png"', f'href="{static_bucket}/sitespeed.io-114.png?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
     html = html.replace(f'href="{prefix}img/ico/sitespeed.io-72.png"', f'href="{static_bucket}/sitespeed.io-72.png?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
+    html = html.replace(f'href="{prefix}img/ico/sitespeed.io-57.png"', f'href="{static_bucket}/sitespeed.io-57.png?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
     html = html.replace(f'href="{prefix}img/ico/sitespeed.io.ico"', f'href="{static_bucket}/sitespeed.io.ico?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
     html = html.replace(f'src="{prefix}img/sitespeed.io-logo.png"', f'src="{static_bucket}/sitespeed.io-logo.png?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
     html = html.replace(f'src="{prefix}img/coach.png"', f'src="{static_bucket}/coach.png?integration_id={s3_config["integration_id"]}&is_local={s3_config["is_local"]}"')
